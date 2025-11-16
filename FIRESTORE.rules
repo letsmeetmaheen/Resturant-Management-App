@@ -1,0 +1,43 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Users: each user can read/write only their own document.
+    match /users/{userId} {
+      allow create: if request.auth != null && request.auth.uid == userId;
+      allow read, update, delete: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Orders: user can create an order referencing their uid; read own orders; manager/admin can read all.
+    match /orders/{orderId} {
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow read: if request.auth != null && (resource.data.userId == request.auth.uid || hasManagerRole());
+      allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid; // adjust for status updates by staff via Cloud Functions
+    }
+
+    // Reservations: similar pattern.
+    match /reservations/{reservationId} {
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow read: if request.auth != null && (resource.data.userId == request.auth.uid || hasManagerRole());
+      allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
+    }
+
+    // Vouchers: read allowed to authenticated users; writes restricted to managers/admin.
+    match /vouchers/{voucherId} {
+      allow read: if request.auth != null;
+      allow write: if hasManagerRole();
+    }
+
+    // Feedback: user creates feedback with their uid; can read all (or restrict if desired).
+    match /feedback/{feedbackId} {
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow read: if request.auth != null; // or restrict to owner / managers
+      allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
+    }
+
+    // Helper function for role-based access; relies on custom claims set via Cloud Functions.
+    function hasManagerRole() {
+      return request.auth != null && (request.auth.token.role in ['admin', 'manager']);
+    }
+  }
+}
